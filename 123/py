@@ -1,0 +1,97 @@
+import sys
+import time
+import cv2
+
+tracker_types = ['CSRT','MEDIANFLOW','MOSSE']
+tracker_type = tracker_types[int(sys.argv[1])]
+
+if tracker_type == 'CSRT':
+    tracker = cv2.TrackerCSRT_create()
+elif tracker_type == 'MEDIANFLOW':
+    tracker = cv2.legacy.TrackerMedianFlow_create()
+elif tracker_type == 'MOSSE':
+    tracker = cv2.legacy.TrackerMOSSE_create()
+
+map_dirs = {0:'example1.mp4',1:'example2.mp4',2:'example3.mp4',3:'example4.MP4',4:'example5.mp4'}
+current_dir = map_dirs[int(sys.argv[2])]
+
+video = cv2.VideoCapture(current_dir)
+ret, frame = video.read()
+
+frame_height, frame_width = frame.shape[:2]
+frame = cv2.resize(frame, [frame_width // 2, frame_height // 2])
+
+processed_frames = 0
+count_frames = 0
+
+if not ret:
+    print('Cannot read the video')
+    count_frames += 1
+else: 
+    processed_frames += 1
+
+bbox = cv2.selectROI(frame, False)
+ret = tracker.init(frame, bbox)
+
+# Video writer setup
+output_video_path = f"tracked_{tracker_type}_{current_dir}"
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+output_video = cv2.VideoWriter(output_video_path, fourcc, 30.0, (frame_width // 2, frame_height // 2))
+
+# Start tracking
+start_time = time.time()
+
+total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+while True:
+    ret, frame = video.read()
+    if not ret:
+        break
+    else: 
+        count_frames += 1
+    frame = cv2.resize(frame, [frame_width // 2, frame_height // 2])
+    timer = cv2.getTickCount()
+    timer_start = time.time()
+    ret, bbox = tracker.update(frame)
+    timer_end = time.time()
+    # fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+    fps = count_frames / (timer_end - start_time)
+    if ret:
+        processed_frames += 1
+        p1 = (int(bbox[0]), int(bbox[1]))
+        p2 = (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3]))
+        cv2.rectangle(frame, p1, p2, (255, 255, 0), 2, 1)
+    else:
+        cv2.putText(frame, "Tracking failure detected", (0, 80),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 0, 255), 2)
+    
+
+    cv2.putText(frame, tracker_type + " Tracker", (0, 20),
+                cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 170, 50), 2)
+    cv2.putText(frame, "FPS: " + str(int(fps)), (0, 50),
+                cv2.FONT_HERSHEY_DUPLEX, 0.75, (50, 170, 50), 2)
+    cv2.imshow("Tracking", frame)
+    output_video.write(frame) 
+    k = cv2.waitKey(1) & 0xff
+    if k == 27:
+        break
+
+
+end_time = time.time()
+if video.get(cv2.CAP_PROP_FRAME_COUNT) != 0:
+    print(f"Время работы метода {tracker_type}: {end_time - start_time:.3f} секунд")
+    print(f"Частота потери изображения: {1 / ((end_time - start_time) / video.get(cv2.CAP_PROP_POS_FRAMES)):.0f} кадр/с")
+
+    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_loss = total_frames - processed_frames
+    frame_loss_rate = frame_loss / total_frames
+
+    print("------")
+    print(f"Общее количество кадров: {total_frames}")
+    print(f"Количество обработанных кадров: {processed_frames}")
+    print(f"Потерянных кадров: {frame_loss}")
+    print(f"Частота потери изображения: {frame_loss_rate:.2%}")
+
+video.release()
+output_video.release()
+cv2.destroyAllWindows()
